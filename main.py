@@ -1,172 +1,134 @@
 import sys
+import os
 import threading
 import torch
 import feedparser
-import requests
-from bs4 import BeautifulSoup
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QLabel, QTableWidget, 
-                             QTableWidgetItem, QHeaderView, QProgressBar, QAbstractItemView)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 from transformers import pipeline
 
-# تنظیمات منابع خبری استراتژیک
-NEWS_SOURCES = [
+# تنظیمات منابع خبری
+SOURCES = [
     {"name": "SouthFront", "url": "https://southfront.press/feed/"},
     {"name": "ZeroHedge", "url": "https://feeds.feedburner.com/zerohedge/feed"},
-    {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
-    {"name": "Defense One", "url": "https://www.defenseone.com/rss/all/"}
+    {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"}
 ]
 
-class AnalysisThread(QThread):
-    progress = pyqtSignal(int)
-    status = pyqtSignal(str)
-    finished = pyqtSignal(list)
+class AIProcessor(QThread):
+    status_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int)
+    data_signal = pyqtSignal(list)
 
     def run(self):
-        self.status.emit("در حال بررسی سخت‌افزار و لود مدل AI...")
-        
-        # تشخیص خودکار RTX 3050Ti یا هر GPU موجود
+        self.status_signal.emit("Loading Neural Engine...")
         device = 0 if torch.cuda.is_available() else -1
-        gpu_name = torch.cuda.get_device_name(0) if device == 0 else "CPU"
-        self.status.emit(f"در حال استفاده از: {gpu_name}")
-
+        
         try:
-            # مدل چندزبانه بهینه برای تحلیل احساسات و تنش
-            classifier = pipeline("sentiment-analysis", 
-                                  model="lxyuan/distilbert-base-multilingual-cased-sentiments-student", 
-                                  device=device)
+            # استفاده از مدل چندزبانه برای پشتیبانی از فارسی و انگلیسی
+            analyzer = pipeline("sentiment-analysis", 
+                                model="lxyuan/distilbert-base-multilingual-cased-sentiments-student", 
+                                device=device)
         except Exception as e:
-            self.status.emit(f"خطا در لود مدل: {str(e)}")
+            self.status_signal.emit(f"AI Error: {str(e)}")
             return
 
-        all_results = []
-        total_steps = len(NEWS_SOURCES)
-
-        for i, source in enumerate(NEWS_SOURCES):
-            self.status.emit(f"در حال دریافت اخبار از: {source['name']}...")
+        news_list = []
+        for i, src in enumerate(SOURCES):
+            self.status_signal.emit(f"Scanning {src['name']}...")
             try:
-                feed = feedparser.parse(source['url'])
-                for entry in feed.entries[:7]:  # ۷ خبر برتر از هر منبع
-                    text_to_analyze = f"{entry.title}. {getattr(entry, 'summary', '')}"
+                feed = feedparser.parse(src['url'])
+                for entry in feed.entries[:6]:
+                    text = entry.title + " " + getattr(entry, 'summary', '')
+                    result = analyzer(text[:512])[0]
                     
-                    # تحلیل توسط هوش مصنوعی
-                    result = classifier(text_to_analyze[:512])[0] # محدودیت ۵۱۲ کاراکتر برای سرعت
-                    label = result['label']
-                    score = result['score']
+                    tension = 10
+                    if result['label'] == 'negative':
+                        tension = int(result['score'] * 100)
+                    elif result['label'] == 'positive':
+                        tension = int((1 - result['score']) * 40)
 
-                    # محاسبه امتیاز تنش (Tension Score)
-                    tension = 10 # مقدار پایه
-                    if label == 'negative':
-                        tension = int(score * 100)
-                    elif label == 'positive':
-                        tension = int((1 - score) * 35)
-
-                    all_results.append({
+                    news_list.append({
                         'title': entry.title,
-                        'source': source['name'],
+                        'source': src['name'],
                         'tension': tension,
-                        'status': "بحرانی" if tension > 75 else ("هشدار" if tension > 45 else "عادی"),
-                        'link': entry.link
+                        'label': result['label']
                     })
             except:
                 continue
-            
-            self.progress.emit(int((i + 1) / total_steps * 100))
+            self.progress_signal.emit(int((i + 1) / len(SOURCES) * 100))
+        
+        news_list.sort(key=lambda x: x['tension'], reverse=True)
+        self.data_signal.emit(news_list)
 
-        # مرتب‌سازی بر اساس بیشترین تنش
-        all_results.sort(key=lambda x: x['tension'], reverse=True)
-        self.finished.emit(all_results)
-
-class StrategicApp(QMainWindow):
+class ModernUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AI Strategic Pulse Monitor v1.0")
-        self.resize(1200, 800)
-        self.init_ui()
+        self.setWindowTitle("STRATEGIC AI MONITOR v2.0")
+        self.resize(1000, 700)
+        self.set_style()
+        self.init_widgets()
 
-    def init_ui(self):
-        # تم تیره و نظامی (Military Dark Theme)
+    def set_style(self):
         self.setStyleSheet("""
-            QMainWindow { background-color: #0b0f19; }
-            QLabel { color: #94a3b8; font-weight: bold; }
-            QPushButton { 
-                background-color: #1e293b; color: #3b82f6; 
-                border: 1px solid #3b82f6; padding: 10px; border-radius: 4px;
-                font-size: 14px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #3b82f6; color: white; }
-            QTableWidget { 
-                background-color: #111827; color: #e2e8f0; 
-                gridline-color: #1f2937; border: none; font-size: 13px;
-            }
-            QHeaderView::section { background-color: #1f2937; color: #94a3b8; border: none; padding: 8px; }
-            QProgressBar { border: 1px solid #1f2937; border-radius: 4px; text-align: center; color: white; }
+            QMainWindow { background-color: #0f172a; }
+            QTableWidget { background-color: #1e293b; color: white; border: none; gridline-color: #334155; }
+            QHeaderView::section { background-color: #334155; color: #94a3b8; border: none; padding: 10px; }
+            QPushButton { background-color: #2563eb; color: white; border-radius: 5px; padding: 12px; font-weight: bold; }
+            QPushButton:hover { background-color: #1d4ed8; }
+            QProgressBar { border: 1px solid #334155; border-radius: 5px; text-align: center; color: white; }
             QProgressBar::chunk { background-color: #2563eb; }
         """)
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+    def init_widgets(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
 
-        # هدر برنامه
-        header = QHBoxLayout()
-        title = QLabel("سیستم تحلیل استراتژیک هوشمند (OSINT)")
-        title.setStyleSheet("font-size: 20px; color: #f8fafc; font-family: 'Segoe UI';")
-        header.addWidget(title)
+        self.btn = QPushButton("RUN GLOBAL ANALYSIS")
+        self.btn.clicked.connect(self.start_work)
+        layout.addWidget(self.btn)
 
-        self.btn_run = QPushButton("شروع تحلیل وضعیت")
-        self.btn_run.clicked.connect(self.run_analysis)
-        header.addWidget(self.btn_run)
-        layout.addLayout(header)
+        self.pbar = QProgressBar()
+        layout.addWidget(self.pbar)
 
-        # وضعیت و لودینگ
-        self.status_lbl = QLabel("آماده به کار")
+        self.status_lbl = QLabel("System Ready")
+        self.status_lbl.setStyleSheet("color: #94a3b8;")
         layout.addWidget(self.status_lbl)
-        
-        self.progress_bar = QProgressBar()
-        layout.addWidget(self.progress_bar)
 
-        # جدول اطلاعات
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["عنوان خبر", "منبع استراتژیک", "امتیاز تنش", "وضعیت"])
+        self.table.setHorizontalHeaderLabels(["TITLE", "SOURCE", "TENSION", "SENTIMENT"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
-    def run_analysis(self):
-        self.btn_run.setEnabled(False)
-        self.table.setRowCount(0)
-        self.worker = AnalysisThread()
-        self.worker.progress.connect(self.progress_bar.setValue)
-        self.worker.status.connect(self.status_lbl.setText)
-        self.worker.finished.connect(self.display_results)
+    def start_work(self):
+        self.btn.setEnabled(False)
+        self.worker = AIProcessor()
+        self.worker.status_signal.connect(self.status_lbl.setText)
+        self.worker.progress_signal.connect(self.pbar.setValue)
+        self.worker.data_signal.connect(self.fill_table)
         self.worker.start()
 
-    def display_results(self, data):
+    def fill_table(self, data):
         self.table.setRowCount(len(data))
-        for row, item in enumerate(data):
-            self.table.setItem(row, 0, QTableWidgetItem(item['title']))
-            self.table.setItem(row, 1, QTableWidgetItem(item['source']))
+        for r, item in enumerate(data):
+            self.table.setItem(r, 0, QTableWidgetItem(item['title']))
+            self.table.setItem(r, 1, QTableWidgetItem(item['source']))
             
-            # رنگ‌بندی داینامیک تنش
-            tension_val = item['tension']
-            t_item = QTableWidgetItem(f"{tension_val}%")
-            if tension_val > 75: t_item.setForeground(QColor("#ef4444")) # قرمز
-            elif tension_val > 45: t_item.setForeground(QColor("#f59e0b")) # زرد
-            else: t_item.setForeground(QColor("#10b981")) # سبز
+            t_item = QTableWidgetItem(f"{item['tension']}%")
+            if item['tension'] > 70: t_item.setForeground(QColor("#ef4444"))
+            elif item['tension'] > 40: t_item.setForeground(QColor("#f59e0b"))
+            else: t_item.setForeground(QColor("#10b981"))
             
-            self.table.setItem(row, 2, t_item)
-            self.table.setItem(row, 3, QTableWidgetItem(item['status']))
-            
-        self.btn_run.setEnabled(True)
-        self.status_lbl.setText("تحلیل با موفقیت روی GPU انجام شد.")
+            self.table.setItem(r, 2, t_item)
+            self.table.setItem(r, 3, QTableWidgetItem(item['label']))
+        
+        self.btn.setEnabled(True)
+        self.status_lbl.setText("Analysis Finished.")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = StrategicApp()
+    window = ModernUI()
     window.show()
     sys.exit(app.exec())
