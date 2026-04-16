@@ -1,1 +1,6 @@
-
+PyQt6
+transformers
+torch
+feedparser
+beautifulsoup4
+requests
