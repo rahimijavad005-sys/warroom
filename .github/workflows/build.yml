@@ -1,0 +1,22 @@
+name: Build My EXE
+on: [push]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install Tools
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install PyQt6 transformers feedparser beautifulsoup4 requests pyinstaller
+      - name: Create EXE
+        run: pyinstaller --noconfirm --onefile --windowed --name "MilitaryAI" main.py
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: Final_App
+          path: dist/MilitaryAI.exe
