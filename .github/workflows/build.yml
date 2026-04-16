@@ -1,22 +1,29 @@
 name: Build My EXE
 on: [push]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # برای رفع هشدار Node.js 24
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4 # آپدیت شد به v4
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v5 # آپدیت شد به v5
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          
       - name: Install Tools
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install PyQt6 transformers feedparser beautifulsoup4 requests pyinstaller
+          
       - name: Create EXE
         run: pyinstaller --noconfirm --onefile --windowed --name "MilitaryAI" main.py
+        
       - name: Upload
-        uses: actions/upload-artifact@v4 # مشکل اصلی اینجا بود که به v4 آپدیت شد
+        uses: actions/upload-artifact@v4
         with:
           name: Final_App
           path: dist/MilitaryAI.exe
